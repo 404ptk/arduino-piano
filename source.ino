@@ -92,6 +92,7 @@ bool recordButtonPressed = false;
 bool playButtonPressed = false;
 unsigned long noteStartTime = 0;
 double currentFrequency = 0;
+bool noteIsPressed = false;  // Track if any note button is currently pressed
 
 void setup() {
   // Note buttons
@@ -127,13 +128,23 @@ void loop() {
     
     if (isRecording) {
       noteCount = 0;
+      currentFrequency = 0;
+      noteIsPressed = false;
       digitalWrite(redLED, HIGH);  // Turn on red LED
       Serial.println("*** RECORDING STARTED ***");
     } else {
+      // Save last note if still playing
+      if (currentFrequency > 0 && noteCount < MAX_NOTES) {
+        melody[noteCount].frequency = currentFrequency;
+        melody[noteCount].duration = millis() - noteStartTime;
+        noteCount++;
+      }
       digitalWrite(redLED, LOW);   // Turn off red LED
       Serial.print("*** RECORDING FINISHED - saved ");
       Serial.print(noteCount);
       Serial.println(" notes ***");
+      currentFrequency = 0;
+      noteIsPressed = false;
     }
     delay(200);
   }
@@ -150,51 +161,103 @@ void loop() {
   // ---------------- NOTES ----------------
   double freq = 0;
   char noteChar = ' ';
+  bool buttonPressed = false;
 
   if (digitalRead(cNote) == 1) {
-    freq = c; noteChar = 'C';
-    Serial.println("Button pressed: C");
+    freq = c; noteChar = 'C'; buttonPressed = true;
   } else if (digitalRead(dNote) == 1) {
-    freq = d; noteChar = 'D';
-    Serial.println("Button pressed: D");
+    freq = d; noteChar = 'D'; buttonPressed = true;
   } else if (digitalRead(eNote) == 1) {
-    freq = e; noteChar = 'E';
-    Serial.println("Button pressed: E");
+    freq = e; noteChar = 'E'; buttonPressed = true;
   } else if (digitalRead(fNote) == 1) {
-    freq = f; noteChar = 'F';
-    Serial.println("Button pressed: F");
+    freq = f; noteChar = 'F'; buttonPressed = true;
   } else if (digitalRead(gNote) == 1) {
-    freq = g; noteChar = 'G';
-    Serial.println("Button pressed: G");
+    freq = g; noteChar = 'G'; buttonPressed = true;
   }
 
   // Show note on display
   showNoteChar(noteChar);
 
-  // Sound
+  // Sound and recording logic
   if (freq > 0) {
+    // Button is pressed
     tone(Piezo, freq);
     
-    // Recording - start new note
-    if (isRecording && freq != currentFrequency) {
+    if (isRecording) {
+      // If this is a new note press (not continuation)
+      if (!noteIsPressed) {
+        // Save previous note if exists
+        if (currentFrequency > 0 && noteCount < MAX_NOTES) {
+          melody[noteCount].frequency = currentFrequency;
+          melody[noteCount].duration = millis() - noteStartTime;
+          noteCount++;
+          Serial.print("Recorded note ");
+          Serial.print(noteCount);
+          Serial.print(": ");
+          Serial.println(noteChar);
+        }
+        // Start new note
+        currentFrequency = freq;
+        noteStartTime = millis();
+        noteIsPressed = true;
+      } else if (freq != currentFrequency) {
+        // Different note pressed - save previous and start new
+        if (noteCount < MAX_NOTES) {
+          melody[noteCount].frequency = currentFrequency;
+          melody[noteCount].duration = millis() - noteStartTime;
+          noteCount++;
+          Serial.print("Recorded note ");
+          Serial.print(noteCount);
+          Serial.print(": ");
+          Serial.println(noteChar);
+        }
+        currentFrequency = freq;
+        noteStartTime = millis();
+      }
+    } else {
+      // Normal play mode (not recording)
+      if (!noteIsPressed) {
+        Serial.print("Playing note: ");
+        Serial.println(noteChar);
+        noteIsPressed = true;
+      } else if (freq != currentFrequency) {
+        // Different note pressed
+        Serial.print("Playing note: ");
+        Serial.println(noteChar);
+        currentFrequency = freq;
+      }
+      currentFrequency = freq;
+    }
+  } else {
+    // No button pressed
+    noTone(Piezo);
+    
+    if (isRecording && noteIsPressed) {
+      // Save the note that was just released
       if (currentFrequency > 0 && noteCount < MAX_NOTES) {
-        // Save previous note
         melody[noteCount].frequency = currentFrequency;
         melody[noteCount].duration = millis() - noteStartTime;
         noteCount++;
+        
+        // Find note name for logging
+        char lastNote = '?';
+        if (currentFrequency == c) lastNote = 'C';
+        else if (currentFrequency == d) lastNote = 'D';
+        else if (currentFrequency == e) lastNote = 'E';
+        else if (currentFrequency == f) lastNote = 'F';
+        else if (currentFrequency == g) lastNote = 'G';
+        
+        Serial.print("Recorded note ");
+        Serial.print(noteCount);
+        Serial.print(": ");
+        Serial.println(lastNote);
       }
-      currentFrequency = freq;
-      noteStartTime = millis();
-    }
-  } else {
-    noTone(Piezo);
-    
-    // Recording - end note
-    if (isRecording && currentFrequency > 0 && noteCount < MAX_NOTES) {
-      melody[noteCount].frequency = currentFrequency;
-      melody[noteCount].duration = millis() - noteStartTime;
-      noteCount++;
       currentFrequency = 0;
+      noteIsPressed = false;
+    } else if (!isRecording && noteIsPressed) {
+      // Normal mode - note released
+      currentFrequency = 0;
+      noteIsPressed = false;
     }
   }
   
@@ -226,6 +289,10 @@ void playMelody() {
     if (melody[i].frequency == g) noteChar = 'G';
 
     showNoteChar(noteChar);
+    
+    // Print currently playing note
+    Serial.print("Playing note: ");
+    Serial.println(noteChar);
 
     tone(Piezo, melody[i].frequency);
     delay(400);
@@ -235,4 +302,5 @@ void playMelody() {
 
   digitalWrite(greenLED, LOW);
   showNoteChar(' ');
+  Serial.println("*** PLAYBACK FINISHED ***");
 }

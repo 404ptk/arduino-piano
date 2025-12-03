@@ -34,6 +34,9 @@ A digital music synthesizer with melody recording and playback functionality, bu
 ![Arduino Piano Circuit](tinkercad.png)
 *Figure 1: Complete circuit layout in Tinkercad showing all components and connections*
 
+![Arduino Piano Schematic](schematic_view.png)
+*Figure 2: Schematic diagram showing electrical connections and component relationships*
+
 ## Features
 
 ### 1. Normal Play Mode
@@ -58,17 +61,22 @@ A digital music synthesizer with melody recording and playback functionality, bu
 - Button press logging
 - Information about the number of saved notes
 
+![Serial Monitor Console](console.png)
+*Figure 3: Serial monitor output showing real-time logging of button presses, recording, and playback*
+
 ## Components
 
 | Component | Quantity | Description |
 |-----------|----------|-------------|
-| Arduino Uno/Nano | 1 | ATmega328P Microcontroller |
-| Piezo Buzzer | 1 | Sound Generator |
-| Push Buttons | 7 | 5x notes + RECORD + PLAY |
-| 7-segment LED Display | 1 | 4-digit with HT16K33 controller (I2C) |
-| Red LED | 1 | Recording Indicator |
-| Green LED | 1 | Playback Indicator |
-| Resistors | - | Pull-down for buttons, LED protection |
+| Arduino Uno R3 (U1) | 1 | ATmega328P Microcontroller |
+| Piezo Buzzer (PIEZO1) | 1 | Sound Generator |
+| Push Buttons (S1-S5, SPLAY, S8) | 7 | 5x notes + RECORD + PLAY |
+| 560Ω Resistors (R1-R6) | 6 | Button pull-down resistors |
+| 1kΩ Resistors (R7-R8) | 2 | LED current limiting resistors |
+| Red LED (D4) | 1 | Recording Indicator |
+| Green LED (D5) | 1 | Playback Indicator |
+| 7-segment LED Display (U2) | 1 | Red 4-digit I2C (0x70) HT16K33 controller |
+| 250kΩ Potentiometer (Rpot2) | 1 | Optional - volume/brightness control |
 | Breadboard + wires | 1 | Prototype assembly |
 
 ## Wiring Diagram

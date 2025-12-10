@@ -1,0 +1,351 @@
+#include <Wire.h>
+
+#define HT_ADDR 0x70
+
+// Segments for letters - mapped to 7-segment display
+uint8_t segBlank = 0x00;
+uint8_t segC = 0b00111001;  // C
+uint8_t segD = 0b01011110;  // D (lowercase)
+uint8_t segE = 0b01111001;  // E
+uint8_t segF = 0b01110001;  // F
+uint8_t segG = 0b01111101;  // G
+
+// Initialize HT16K33
+void initDisplay() {
+  Wire.begin();
+
+  Wire.beginTransmission(HT_ADDR);
+  Wire.write(0x21);     // enable oscillator
+  Wire.endTransmission();
+
+  Wire.beginTransmission(HT_ADDR);
+  Wire.write(0x81);     // enable display
+  Wire.endTransmission();
+
+  Wire.beginTransmission(HT_ADDR);
+  Wire.write(0xEF);     // max brightness
+  Wire.endTransmission();
+}
+
+// Send segments to 4 digits
+void sendSegments(uint8_t d0, uint8_t d1, uint8_t d2, uint8_t d3) {
+  Wire.beginTransmission(HT_ADDR);
+  Wire.write(0x00); // RAM address
+
+  Wire.write(d0); Wire.write(0x00);
+  Wire.write(d1); Wire.write(0x00);
+  Wire.write(d2); Wire.write(0x00);
+  Wire.write(d3); Wire.write(0x00);
+
+  Wire.endTransmission();
+}
+
+// Show note letter
+void showNoteChar(char n) {
+  uint8_t s;
+
+  switch(n) {
+    case 'C': s = segC; break;
+    case 'D': s = segD; break;
+    case 'E': s = segE; break;
+    case 'F': s = segF; break;
+    case 'G': s = segG; break;
+    default:  s = segBlank;
+  }
+
+  sendSegments(s, segBlank, segBlank, segBlank);
+}
+
+// Note button pins
+int cNote = 9;  // C
+int dNote = 8;  // D
+int eNote = 7;  // E
+int fNote = 6;  // F
+int gNote = 5;  // G
+
+// Control pins
+int Piezo = 2;
+int recordButton = A3;  // RECORD button
+int playButton = A2;    // PLAY button
+int redLED = 10;        // Red LED - recording
+int greenLED = 11;      // Green LED - playback
+
+// Debouncing variables for note buttons
+unsigned long lastDebounceTime[5] = {0, 0, 0, 0, 0};
+int lastButtonState[5] = {LOW, LOW, LOW, LOW, LOW};
+int buttonState[5] = {LOW, LOW, LOW, LOW, LOW};
+const unsigned long debounceDelay = 5;  // 5ms for note buttons
+
+// Debouncing for control buttons
+unsigned long lastRecordDebounce = 0;
+unsigned long lastPlayDebounce = 0;
+int lastRecordState = HIGH;
+int lastPlayState = HIGH;
+int recordState = HIGH;
+int playState = HIGH;
+const unsigned long controlDebounceDelay = 25;  // 25ms for control buttons
+
+// Note frequencies
+double c = 261.63;
+double d = 293.66;
+double e = 329.63;
+double f = 349.23;
+double g = 392;
+double a = 440;
+
+// Structure for storing melody
+#define MAX_NOTES 100
+struct Note {
+  double frequency;
+  unsigned long duration;
+};
+
+Note melody[MAX_NOTES];
+int noteCount = 0;
+bool isRecording = false;
+unsigned long noteStartTime = 0;
+double currentFrequency = 0;
+bool noteIsPressed = false;  // Track if any note button is currently pressed
+
+// Debounce function for note buttons
+int debounceRead(int pin, int index) {
+  int reading = digitalRead(pin);
+  
+  if (reading != lastButtonState[index]) {
+    lastDebounceTime[index] = millis();
+  }
+  
+  if ((millis() - lastDebounceTime[index]) > debounceDelay) {
+    if (reading != buttonState[index]) {
+      buttonState[index] = reading;
+    }
+  }
+  
+  lastButtonState[index] = reading;
+  return buttonState[index];
+}
+
+// Debounce function for control buttons (returns true on button press)
+bool debounceControlButton(int pin, int &lastState, int &currentState, unsigned long &lastDebounce) {
+  int reading = digitalRead(pin);
+  
+  if (reading != lastState) {
+    lastDebounce = millis();
+  }
+  
+  if ((millis() - lastDebounce) > controlDebounceDelay) {
+    if (reading != currentState) {
+      currentState = reading;
+      lastState = reading;
+      if (currentState == LOW) {  // Button pressed (with pullup)
+        return true;
+      }
+    }
+  }
+  
+  lastState = reading;
+  return false;
+}
+
+void setup() {
+  // Note buttons
+  pinMode(cNote, INPUT);
+  pinMode(dNote, INPUT);
+  pinMode(eNote, INPUT);
+  pinMode(fNote, INPUT);
+  pinMode(gNote, INPUT);
+  
+  // Control buttons
+  pinMode(recordButton, INPUT_PULLUP);
+  pinMode(playButton, INPUT_PULLUP);
+
+  // LEDs
+  pinMode(redLED, OUTPUT);
+  pinMode(greenLED, OUTPUT);
+
+  pinMode(Piezo, OUTPUT);
+
+  Serial.begin(9600);
+
+  initDisplay();
+  showNoteChar(' '); // blank on start
+
+  Serial.println("Piano ready with debouncing!");
+}
+
+void loop() {
+  // Handle RECORD button with debouncing
+  if (debounceControlButton(recordButton, lastRecordState, recordState, lastRecordDebounce)) {
+    isRecording = !isRecording;
+    
+    if (isRecording) {
+      noteCount = 0;
+      currentFrequency = 0;
+      noteIsPressed = false;
+      digitalWrite(redLED, HIGH);  // Turn on red LED
+      Serial.println("*** RECORDING STARTED ***");
+    } else {
+      // Save last note if still playing
+      if (currentFrequency > 0 && noteCount < MAX_NOTES) {
+        melody[noteCount].frequency = currentFrequency;
+        melody[noteCount].duration = millis() - noteStartTime;
+        noteCount++;
+      }
+      digitalWrite(redLED, LOW);   // Turn off red LED
+      Serial.print("*** RECORDING FINISHED - saved ");
+      Serial.print(noteCount);
+      Serial.println(" notes ***");
+      currentFrequency = 0;
+      noteIsPressed = false;
+    }
+  }
+
+  // ---------------- PLAY ----------------
+  if (debounceControlButton(playButton, lastPlayState, playState, lastPlayDebounce)) {
+    playMelody();
+  }
+
+  // ---------------- NOTES with debouncing ----------------
+  double freq = 0;
+  char noteChar = ' ';
+  bool buttonPressed = false;
+
+  if (debounceRead(cNote, 0) == HIGH) {
+    freq = c; noteChar = 'C'; buttonPressed = true;
+  } else if (debounceRead(dNote, 1) == HIGH) {
+    freq = d; noteChar = 'D'; buttonPressed = true;
+  } else if (debounceRead(eNote, 2) == HIGH) {
+    freq = e; noteChar = 'E'; buttonPressed = true;
+  } else if (debounceRead(fNote, 3) == HIGH) {
+    freq = f; noteChar = 'F'; buttonPressed = true;
+  } else if (debounceRead(gNote, 4) == HIGH) {
+    freq = g; noteChar = 'G'; buttonPressed = true;
+  }
+
+  // Show note on display
+  showNoteChar(noteChar);
+
+  // Sound and recording logic
+  if (freq > 0) {
+    // Button is pressed
+    tone(Piezo, freq);
+    
+    if (isRecording) {
+      // If this is a new note press (not continuation)
+      if (!noteIsPressed) {
+        // Save previous note if exists
+        if (currentFrequency > 0 && noteCount < MAX_NOTES) {
+          melody[noteCount].frequency = currentFrequency;
+          melody[noteCount].duration = millis() - noteStartTime;
+          noteCount++;
+          Serial.print("Recorded note ");
+          Serial.print(noteCount);
+          Serial.print(": ");
+          Serial.println(noteChar);
+        }
+        // Start new note
+        currentFrequency = freq;
+        noteStartTime = millis();
+        noteIsPressed = true;
+      } else if (freq != currentFrequency) {
+        // Different note pressed - save previous and start new
+        if (noteCount < MAX_NOTES) {
+          melody[noteCount].frequency = currentFrequency;
+          melody[noteCount].duration = millis() - noteStartTime;
+          noteCount++;
+          Serial.print("Recorded note ");
+          Serial.print(noteCount);
+          Serial.print(": ");
+          Serial.println(noteChar);
+        }
+        currentFrequency = freq;
+        noteStartTime = millis();
+      }
+    } else {
+      // Normal play mode (not recording)
+      if (!noteIsPressed) {
+        Serial.print("Playing note: ");
+        Serial.println(noteChar);
+        noteIsPressed = true;
+      } else if (freq != currentFrequency) {
+        // Different note pressed
+        Serial.print("Playing note: ");
+        Serial.println(noteChar);
+        currentFrequency = freq;
+      }
+      currentFrequency = freq;
+    }
+  } else {
+    // No button pressed
+    noTone(Piezo);
+    
+    if (isRecording && noteIsPressed) {
+      // Save the note that was just released
+      if (currentFrequency > 0 && noteCount < MAX_NOTES) {
+        melody[noteCount].frequency = currentFrequency;
+        melody[noteCount].duration = millis() - noteStartTime;
+        noteCount++;
+        
+        // Find note name for logging
+        char lastNote = '?';
+        if (currentFrequency == c) lastNote = 'C';
+        else if (currentFrequency == d) lastNote = 'D';
+        else if (currentFrequency == e) lastNote = 'E';
+        else if (currentFrequency == f) lastNote = 'F';
+        else if (currentFrequency == g) lastNote = 'G';
+        
+        Serial.print("Recorded note ");
+        Serial.print(noteCount);
+        Serial.print(": ");
+        Serial.println(lastNote);
+      }
+      currentFrequency = 0;
+      noteIsPressed = false;
+    } else if (!isRecording && noteIsPressed) {
+      // Normal mode - note released
+      currentFrequency = 0;
+      noteIsPressed = false;
+    }
+  }
+}
+
+void playMelody() {
+  if (noteCount == 0) {
+    Serial.println("No recorded melody!");
+    // Audio signal
+    tone(Piezo, 200, 100);
+    delay(150);
+    tone(Piezo, 200, 100);
+    return;
+  }
+  
+  Serial.println("*** PLAYBACK (Tempo 0.5s) ***");
+  digitalWrite(greenLED, HIGH);  // Turn on green LED
+  noTone(Piezo);
+  delay(500);
+  
+  for (int i = 0; i < noteCount; i++) {
+    char noteChar = ' ';
+
+    if (melody[i].frequency == c) noteChar = 'C';
+    if (melody[i].frequency == d) noteChar = 'D';
+    if (melody[i].frequency == e) noteChar = 'E';
+    if (melody[i].frequency == f) noteChar = 'F';
+    if (melody[i].frequency == g) noteChar = 'G';
+
+    showNoteChar(noteChar);
+    
+    // Print currently playing note
+    Serial.print("Playing note: ");
+    Serial.println(noteChar);
+
+    tone(Piezo, melody[i].frequency);
+    delay(400);
+    noTone(Piezo);
+    delay(100);
+  }
+
+  digitalWrite(greenLED, LOW);
+  showNoteChar(' ');
+  Serial.println("*** PLAYBACK FINISHED ***");
+}

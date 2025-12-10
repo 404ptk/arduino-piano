@@ -1,59 +1,45 @@
 #include <Wire.h>
+#include <LedControl.h>  // MAX7219
 
-#define HT_ADDR 0x70
+// MAX7219 pin definitions
+#define MAX_DIN 11
+#define MAX_CLK 13
+#define MAX_CS  10
 
-// Segments for letters - mapped to 7-segment display
-uint8_t segBlank = 0x00;
-uint8_t segC = 0b00111001;  // C
-uint8_t segD = 0b01011110;  // D (lowercase)
-uint8_t segE = 0b01111001;  // E
-uint8_t segF = 0b01110001;  // F
-uint8_t segG = 0b01111101;  // G
+// Create LedControl object
+LedControl lc = LedControl(MAX_DIN, MAX_CLK, MAX_CS, 1);
 
-// Initialize HT16K33
+// 8x8 font for notes
+byte charC[] = {0b00111100,0b01000010,0b01000010,0b01000010,0b01000010,0b01000010,0b00111100,0};
+byte charD[] = {0b01111110,0b10000010,0b10000010,0b10000010,0b10000010,0b10000010,0b01111110,0};
+byte charE[] = {0b11111111,0b10001000,0b10001000,0b10001000,0b10001000,0b10001000,0b11111111,0};
+byte charF[] = {0b11111111,0b10000000,0b10000000,0b11110000,0b10000000,0b10000000,0b10000000,0};
+byte charG[] = {0b00111110,0b01000001,0b01000001,0b01001001,0b01001001,0b01001001,0b00111111,0};
+byte charBlank[] = {0,0,0,0,0,0,0,0};
+
+
 void initDisplay() {
-  Wire.begin();
-
-  Wire.beginTransmission(HT_ADDR);
-  Wire.write(0x21);     // enable oscillator
-  Wire.endTransmission();
-
-  Wire.beginTransmission(HT_ADDR);
-  Wire.write(0x81);     // enable display
-  Wire.endTransmission();
-
-  Wire.beginTransmission(HT_ADDR);
-  Wire.write(0xEF);     // max brightness
-  Wire.endTransmission();
-}
-
-// Send segments to 4 digits
-void sendSegments(uint8_t d0, uint8_t d1, uint8_t d2, uint8_t d3) {
-  Wire.beginTransmission(HT_ADDR);
-  Wire.write(0x00); // RAM address
-
-  Wire.write(d0); Wire.write(0x00);
-  Wire.write(d1); Wire.write(0x00);
-  Wire.write(d2); Wire.write(0x00);
-  Wire.write(d3); Wire.write(0x00);
-
-  Wire.endTransmission();
+  lc.shutdown(0, false);
+  lc.setIntensity(0, 8);
+  lc.clearDisplay(0);
 }
 
 // Show note letter
 void showNoteChar(char n) {
-  uint8_t s;
+  byte* data = charBlank;
 
-  switch(n) {
-    case 'C': s = segC; break;
-    case 'D': s = segD; break;
-    case 'E': s = segE; break;
-    case 'F': s = segF; break;
-    case 'G': s = segG; break;
-    default:  s = segBlank;
+  switch (n) {
+    case 'C': data = charC; break;
+    case 'D': data = charD; break;
+    case 'E': data = charE; break;
+    case 'F': data = charF; break;
+    case 'G': data = charG; break;
+    default:  data = charBlank; break;
   }
 
-  sendSegments(s, segBlank, segBlank, segBlank);
+  for (int col = 0; col < 8; col++) {
+    lc.setColumn(0, col, data[col]);
+  }
 }
 
 // Note button pins
@@ -65,10 +51,11 @@ int gNote = 5;  // G
 
 // Control pins
 int Piezo = 2;
-int recordButton = A3;  // RECORD button
-int playButton = A2;    // PLAY button
-int redLED = 10;        // Red LED - recording
-int greenLED = 11;      // Green LED - playback
+int recordButton = A3;
+int playButton = A2;
+
+int redLED = A1;     // WAS 10
+int greenLED = A0;   // WAS 11
 
 // Note frequencies
 double c = 261.63;

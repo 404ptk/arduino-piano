@@ -187,7 +187,7 @@ A digital music synthesizer with melody recording and playback functionality, bu
 
 The project can be tested without physical components in the Autodesk Tinkercad environment:
 
-**Link: [Open project in Tinkercad]([https://www.tinkercad.com/things/eABRWKvcff0](https://www.tinkercad.com/things/eABRWKvcff0-projekt-diodki?sharecode=2zRDJSEQqqImQ0wgiY1s7-4Syzj_ovef-c4AxTszhOY))**
+**Link: [Open project in Tinkercad]([https://www.tinkercad.com/things/eABRWKvcff0-projekt-diodki?sharecode=2zRDJSEQqqImQ0wgiY1s7-4Syzj_ovef-c4AxTszhOY])**
 
 ### Simulation Advantages:
 - Testing the circuit without hardware
